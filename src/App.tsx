@@ -41,7 +41,6 @@ const SHORT_DATE = new Intl.DateTimeFormat("en-US", {
 
 const NEW_CATEGORY_VALUE = "__new__";
 
-const SWATCHES = ["#f97316", "#0ea5a4", "#10b981", "#f43f5e", "#3b82f6"];
 
 type HabitDef = {
   id: string;
@@ -82,11 +81,30 @@ const shiftDate = (date: Date, delta: number) => {
   return next;
 };
 
-const hashId = (value: string) =>
-  value.split("").reduce((acc, char) => acc + char.charCodeAt(0), 0);
+const stripEmojiForSort = (value: string) => {
+  try {
+    return value
+      .replace(/[\p{Extended_Pictographic}\uFE0F\u200D]/gu, "")
+      .replace(/[\u{1F3FB}-\u{1F3FF}]/gu, "")
+      .trim();
+  } catch {
+    return value.trim();
+  }
+};
 
-const getHabitColor = (habit: HabitDef) =>
-  habit.color ?? SWATCHES[hashId(habit.id) % SWATCHES.length];
+const habitSortKey = (habit: HabitDef) =>
+  stripEmojiForSort((habit.label ?? habit.id).normalize("NFKC"))
+    .replace(/\s+/g, " ")
+    .toLocaleLowerCase();
+
+const TYPE_ORDER: Record<NonNullable<HabitDef["type"]>, number> = {
+  boolean: 0,
+  enum: 1,
+  multiEnum: 2,
+  number: 3,
+};
+
+const habitTypeRank = (habit: HabitDef) => TYPE_ORDER[habit.type ?? "boolean"];
 
 const toCamelCaseId = (value: string) => {
   const normalized = value.normalize("NFKD").replace(/[\u0300-\u036f]/g, "");
@@ -224,6 +242,48 @@ export default function App() {
     () => habits.filter((habit) => habit.active !== false),
     [habits]
   );
+
+  const habitGroups = useMemo(() => {
+    const grouped = new Map<string, HabitDef[]>();
+
+    for (const habit of activeHabits) {
+      const category = habit.category?.trim() || "Uncategorized";
+      const bucket = grouped.get(category);
+      if (bucket) {
+        bucket.push(habit);
+      } else {
+        grouped.set(category, [habit]);
+      }
+    }
+
+    const entries = Array.from(grouped.entries()).map(([category, items]) => ({
+      category,
+      items: items
+        .slice()
+        .sort((a, b) => {
+          const typeDelta = habitTypeRank(a) - habitTypeRank(b);
+          if (typeDelta !== 0) {
+            return typeDelta;
+          }
+          return habitSortKey(a).localeCompare(habitSortKey(b), undefined, {
+            sensitivity: "base",
+            numeric: true,
+          });
+        }),
+    }));
+
+    entries.sort((a, b) => {
+      if (a.category === "Uncategorized" && b.category !== "Uncategorized") {
+        return 1;
+      }
+      if (b.category === "Uncategorized" && a.category !== "Uncategorized") {
+        return -1;
+      }
+      return a.category.localeCompare(b.category);
+    });
+
+    return entries;
+  }, [activeHabits]);
 
   const dateKey = formatDateKey(selectedDate);
   const prettyDate = DATE_FORMATTER.format(selectedDate);
@@ -923,188 +983,200 @@ export default function App() {
               No habits yet. Add documents in `trackerDefs` or create one below.
             </p>
           ) : (
-            <ul className="habit-list">
-              {activeHabits.map((habit, index) => {
-                const entry = dayEntries[habit.id];
-                const isEnum = habit.type === "enum";
-                const isMultiEnum = habit.type === "multiEnum";
-                const isNumber = habit.type === "number";
-                const done = isEnum
-                  ? typeof entry === "string" && entry.length > 0
-                  : isMultiEnum
-                  ? Array.isArray(entry) && entry.length > 0
-                  : isNumber
-                  ? typeof entry === "number" && Number.isFinite(entry)
-                  : entry === true;
-                const inactive = habit.active === false;
-                const multiValues =
-                  isMultiEnum && Array.isArray(entry) ? entry : [];
-                const details = [habit.category, habit.type]
-                  .filter(Boolean)
-                  .join(" · ");
-                const status = inactive
-                  ? "Inactive"
-                  : isEnum
-                  ? typeof entry === "string" && entry.length > 0
-                    ? entry
-                    : "Not tracked"
-                  : isMultiEnum
-                  ? multiValues.length
-                    ? multiValues.join(", ")
-                    : "Not tracked"
-                  : isNumber
-                  ? typeof entry === "number" && Number.isFinite(entry)
-                    ? `${entry}${habit.unit ? ` ${habit.unit}` : ""}`
-                    : "Not tracked"
-                  : done
-                  ? "Completed"
-                  : "Not yet";
-                return (
-                  <li
-                    key={habit.id}
-                    className={`habit-item ${done ? "done" : ""} ${
-                      inactive ? "inactive" : ""
-                    }`}
-                    style={{ animationDelay: `${index * 45}ms` }}
-                  >
-                    {isEnum ? (
-                      <select
-                        className="enum-select"
-                        value={typeof entry === "string" ? entry : ""}
-                        onChange={(event) =>
-                          void setEnumHabitValue(habit.id, event.target.value)
-                        }
-                        aria-label={`${habit.label ?? habit.id} value`}
-                        disabled={inactive}
-                      >
-                        <option value="">Not tracked</option>
-                        {(habit.enumOptions ?? []).map((option) => (
-                          <option key={option} value={option}>
-                            {option}
-                          </option>
-                        ))}
-                      </select>
-                    ) : isMultiEnum ? (
-                      <div className="multi-enum">
-                        {(habit.enumOptions ?? []).map((option) => {
-                          const checked = multiValues.includes(option);
-                          return (
-                            <label key={option} className="multi-enum-option">
-                              <input
-                                type="checkbox"
-                                checked={checked}
-                                onChange={(event) => {
-                                  const next = event.target.checked
-                                    ? [...multiValues, option]
-                                    : multiValues.filter(
-                                        (value) => value !== option
-                                      );
-                                  void setMultiEnumHabitValues(habit.id, next);
-                                }}
-                                aria-label={`${
-                                  habit.label ?? habit.id
-                                } ${option}`}
-                                disabled={inactive}
-                              />
-                              <span>{option}</span>
-                            </label>
-                          );
-                        })}
-                      </div>
-                    ) : isNumber ? (
-                      <input
-                        className="number-input"
-                        type="text"
-                        inputMode="decimal"
-                        pattern="[0-9]*[.,]?[0-9]*"
-                        value={
-                          numberDrafts[habit.id] ??
-                          (typeof entry === "number" && Number.isFinite(entry)
-                            ? String(entry)
-                            : "")
-                        }
-                        onChange={(event) => {
-                          const raw = event.target.value;
-                          setNumberDrafts((prev) => ({
-                            ...prev,
-                            [habit.id]: raw,
-                          }));
-                          if (!raw) {
-                            void setNumberHabitValue(habit.id, null);
-                            return;
-                          }
-                          const parsed = parseLocaleNumber(raw);
-                          if (parsed === null) {
-                            return;
-                          }
-                          void setNumberHabitValue(habit.id, parsed);
-                        }}
-                        onBlur={() => {
-                          const raw = numberDrafts[habit.id];
-                          if (raw === undefined) {
-                            return;
-                          }
+            <div className="habit-groups">
+              {habitGroups.map((group) => (
+                <section key={group.category} className="habit-group">
+                  <h3 className="habit-group-title">{group.category}</h3>
+                  <ul className="habit-list">
+                    {group.items.map((habit, index) => {
+                      const entry = dayEntries[habit.id];
+                      const isEnum = habit.type === "enum";
+                      const isMultiEnum = habit.type === "multiEnum";
+                      const isNumber = habit.type === "number";
+                      const done = isEnum
+                        ? typeof entry === "string" && entry.length > 0
+                        : isMultiEnum
+                        ? Array.isArray(entry) && entry.length > 0
+                        : isNumber
+                        ? typeof entry === "number" && Number.isFinite(entry)
+                        : entry === true;
+                      const inactive = habit.active === false;
+                      const multiValues =
+                        isMultiEnum && Array.isArray(entry) ? entry : [];
+                      const status = inactive
+                        ? "Inactive"
+                        : isEnum
+                        ? typeof entry === "string" && entry.length > 0
+                          ? entry
+                          : "Not tracked"
+                        : isMultiEnum
+                        ? multiValues.length
+                          ? multiValues.join(", ")
+                          : "Not tracked"
+                        : isNumber
+                        ? typeof entry === "number" && Number.isFinite(entry)
+                          ? `${entry}${habit.unit ? ` ${habit.unit}` : ""}`
+                          : "Not tracked"
+                        : done
+                        ? "Completed"
+                        : "Not yet";
 
-                          if (!raw.trim()) {
-                            void setNumberHabitValue(habit.id, null);
-                            setNumberDrafts((prev) => {
-                              const next = { ...prev };
-                              delete next[habit.id];
-                              return next;
-                            });
-                            return;
-                          }
+                      return (
+                        <li
+                          key={habit.id}
+                          className={`habit-item ${done ? "done" : ""} ${
+                            inactive ? "inactive" : ""
+                          }`}
+                          style={{ animationDelay: `${index * 45}ms` }}
+                        >
+                          {isEnum ? (
+                            <select
+                              className="enum-select"
+                              value={typeof entry === "string" ? entry : ""}
+                              onChange={(event) =>
+                                void setEnumHabitValue(
+                                  habit.id,
+                                  event.target.value
+                                )
+                              }
+                              aria-label={`${habit.label ?? habit.id} value`}
+                              disabled={inactive}
+                            >
+                              <option value="">Not tracked</option>
+                              {(habit.enumOptions ?? []).map((option) => (
+                                <option key={option} value={option}>
+                                  {option}
+                                </option>
+                              ))}
+                            </select>
+                          ) : isMultiEnum ? (
+                            <div className="multi-enum">
+                              {(habit.enumOptions ?? []).map((option) => {
+                                const checked = multiValues.includes(option);
+                                return (
+                                  <label
+                                    key={option}
+                                    className="multi-enum-option"
+                                  >
+                                    <input
+                                      type="checkbox"
+                                      checked={checked}
+                                      onChange={(event) => {
+                                        const next = event.target.checked
+                                          ? [...multiValues, option]
+                                          : multiValues.filter(
+                                              (value) => value !== option
+                                            );
+                                        void setMultiEnumHabitValues(
+                                          habit.id,
+                                          next
+                                        );
+                                      }}
+                                      aria-label={`${
+                                        habit.label ?? habit.id
+                                      } ${option}`}
+                                      disabled={inactive}
+                                    />
+                                    <span>{option}</span>
+                                  </label>
+                                );
+                              })}
+                            </div>
+                          ) : isNumber ? (
+                            <input
+                              className="number-input"
+                              type="text"
+                              inputMode="decimal"
+                              pattern="[0-9]*[.,]?[0-9]*"
+                              value={
+                                numberDrafts[habit.id] ??
+                                (typeof entry === "number" &&
+                                Number.isFinite(entry)
+                                  ? String(entry)
+                                  : "")
+                              }
+                              onChange={(event) => {
+                                const raw = event.target.value;
+                                setNumberDrafts((prev) => ({
+                                  ...prev,
+                                  [habit.id]: raw,
+                                }));
+                                if (!raw) {
+                                  void setNumberHabitValue(habit.id, null);
+                                  return;
+                                }
+                                const parsed = parseLocaleNumber(raw);
+                                if (parsed === null) {
+                                  return;
+                                }
+                                void setNumberHabitValue(habit.id, parsed);
+                              }}
+                              onBlur={() => {
+                                const raw = numberDrafts[habit.id];
+                                if (raw === undefined) {
+                                  return;
+                                }
 
-                          const parsed = parseLocaleNumber(raw);
-                          if (parsed !== null) {
-                            void setNumberHabitValue(habit.id, parsed);
-                          }
+                                if (!raw.trim()) {
+                                  void setNumberHabitValue(habit.id, null);
+                                  setNumberDrafts((prev) => {
+                                    const next = { ...prev };
+                                    delete next[habit.id];
+                                    return next;
+                                  });
+                                  return;
+                                }
 
-                          setNumberDrafts((prev) => {
-                            const next = { ...prev };
-                            delete next[habit.id];
-                            return next;
-                          });
-                        }}
-                        placeholder={habit.unit ? habit.unit : "Not tracked"}
-                        aria-label={`${habit.label ?? habit.id} value`}
-                        disabled={inactive}
-                      />
-                    ) : (
-                      <button
-                        className="toggle"
-                        onClick={() => void toggleHabit(habit.id)}
-                        aria-pressed={done}
-                        disabled={inactive}
-                      >
-                        <span className="toggle-dot" />
-                      </button>
-                    )}
-                    <div className="habit-body">
-                      <p className="habit-name">{habit.label ?? habit.id}</p>
-                      <p className="habit-meta">
-                        {status}
-                        {details ? ` · ${details}` : ""}
-                      </p>
-                    </div>
-                    <div className="habit-right">
-                      <button
-                        type="button"
-                        className="ghost mini"
-                        onClick={() => startEditingHabit(habit)}
-                        disabled={habitsLoading || dayLoading}
-                      >
-                        Edit
-                      </button>
-                      <span
-                        className="habit-color"
-                        style={{ background: getHabitColor(habit) }}
-                      />
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
+                                const parsed = parseLocaleNumber(raw);
+                                if (parsed !== null) {
+                                  void setNumberHabitValue(habit.id, parsed);
+                                }
+
+                                setNumberDrafts((prev) => {
+                                  const next = { ...prev };
+                                  delete next[habit.id];
+                                  return next;
+                                });
+                              }}
+                              placeholder={
+                                habit.unit ? habit.unit : "Not tracked"
+                              }
+                              aria-label={`${habit.label ?? habit.id} value`}
+                              disabled={inactive}
+                            />
+                          ) : (
+                            <button
+                              className="toggle"
+                              onClick={() => void toggleHabit(habit.id)}
+                              aria-pressed={done}
+                              disabled={inactive}
+                            >
+                              <span className="toggle-dot" />
+                            </button>
+                          )}
+                          <div className="habit-body">
+                            <p className="habit-name">
+                              {habit.label ?? habit.id}
+                            </p>
+                            <p className="habit-meta">{status}</p>
+                          </div>
+                          <div className="habit-right">
+                            <button
+                              type="button"
+                              className="ghost mini"
+                              onClick={() => startEditingHabit(habit)}
+                              disabled={habitsLoading || dayLoading}
+                            >
+                              Edit
+                            </button>
+                          </div>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </section>
+              ))}
+            </div>
           )}
         </section>
 

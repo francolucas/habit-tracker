@@ -262,6 +262,24 @@ button.ghost {
   color: var(--accent);
 }
 
+.habit-groups {
+  display: grid;
+  gap: 18px;
+}
+
+.habit-group {
+  display: grid;
+  gap: 10px;
+}
+
+.habit-group-title {
+  margin: 0;
+  font-size: 0.95rem;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
 .habit-list {
   list-style: none;
   padding: 0;
@@ -348,7 +366,7 @@ button.ghost {
 .habit-right {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 0;
 }
 
 button.mini {
@@ -386,11 +404,6 @@ button.mini {
   color: var(--muted);
 }
 
-.habit-color {
-  width: 12px;
-  height: 42px;
-  border-radius: 999px;
-}
 
 .enum-builder {
   display: flex;
