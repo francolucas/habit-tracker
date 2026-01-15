@@ -41,7 +41,6 @@ const SHORT_DATE = new Intl.DateTimeFormat("en-US", {
 
 const NEW_CATEGORY_VALUE = "__new__";
 
-
 type HabitDef = {
   id: string;
   label?: string;
@@ -258,18 +257,16 @@ export default function App() {
 
     const entries = Array.from(grouped.entries()).map(([category, items]) => ({
       category,
-      items: items
-        .slice()
-        .sort((a, b) => {
-          const typeDelta = habitTypeRank(a) - habitTypeRank(b);
-          if (typeDelta !== 0) {
-            return typeDelta;
-          }
-          return habitSortKey(a).localeCompare(habitSortKey(b), undefined, {
-            sensitivity: "base",
-            numeric: true,
-          });
-        }),
+      items: items.slice().sort((a, b) => {
+        const typeDelta = habitTypeRank(a) - habitTypeRank(b);
+        if (typeDelta !== 0) {
+          return typeDelta;
+        }
+        return habitSortKey(a).localeCompare(habitSortKey(b), undefined, {
+          sensitivity: "base",
+          numeric: true,
+        });
+      }),
     }));
 
     entries.sort((a, b) => {
@@ -287,6 +284,7 @@ export default function App() {
 
   const dateKey = formatDateKey(selectedDate);
   const prettyDate = DATE_FORMATTER.format(selectedDate);
+  const isToday = dateKey === formatDateKey(new Date());
 
   useEffect(() => {
     if (categorySelection !== NEW_CATEGORY_VALUE) {
@@ -958,6 +956,7 @@ export default function App() {
             <button
               className="ghost"
               onClick={() => setSelectedDate(new Date())}
+              disabled={isToday}
             >
               Today
             </button>
