@@ -117,6 +117,44 @@ const parseConfigInput = (raw: string): FirebaseConfig | null => {
   }
 };
 
+const normalizeLocaleNumberString = (raw: string) => {
+  const compact = raw.trim().replace(/\s+/g, "");
+  if (!compact) {
+    return "";
+  }
+
+  const hasComma = compact.includes(",");
+  const hasDot = compact.includes(".");
+  if (!hasComma) {
+    return compact;
+  }
+
+  if (!hasDot) {
+    return compact.replace(/,/g, ".");
+  }
+
+  const decimalSep =
+    compact.lastIndexOf(",") > compact.lastIndexOf(".") ? "," : ".";
+  const thousandSep = decimalSep === "," ? "." : ",";
+  const withoutThousands =
+    thousandSep === "."
+      ? compact.replace(/\./g, "")
+      : compact.replace(/,/g, "");
+
+  return decimalSep === ","
+    ? withoutThousands.replace(/,/g, ".")
+    : withoutThousands;
+};
+
+const parseLocaleNumber = (raw: string): number | null => {
+  const normalized = normalizeLocaleNumberString(raw);
+  if (!normalized) {
+    return null;
+  }
+  const parsed = Number.parseFloat(normalized);
+  return Number.isFinite(parsed) ? parsed : null;
+};
+
 export default function App() {
   const [config, setConfig] = useState<FirebaseConfig | null>(() =>
     loadFirebaseConfig()
@@ -128,6 +166,7 @@ export default function App() {
   const [dayEntries, setDayEntries] = useState<
     Record<string, boolean | string | number | string[]>
   >({});
+  const [numberDrafts, setNumberDrafts] = useState<Record<string, string>>({});
   const [habitsLoading, setHabitsLoading] = useState(true);
   const [dayLoading, setDayLoading] = useState(true);
   const [dayExists, setDayExists] = useState(false);
@@ -898,26 +937,54 @@ export default function App() {
                     ) : isNumber ? (
                       <input
                         className="number-input"
-                        type="number"
-                        lang="en"
+                        type="text"
                         inputMode="decimal"
-                        step="any"
+                        pattern="[0-9]*[.,]?[0-9]*"
                         value={
-                          typeof entry === "number" && Number.isFinite(entry)
+                          numberDrafts[habit.id] ??
+                          (typeof entry === "number" && Number.isFinite(entry)
                             ? String(entry)
-                            : ""
+                            : "")
                         }
                         onChange={(event) => {
                           const raw = event.target.value;
+                          setNumberDrafts((prev) => ({ ...prev, [habit.id]: raw }));
                           if (!raw) {
                             void setNumberHabitValue(habit.id, null);
                             return;
                           }
-                          const parsed = Number.parseFloat(raw);
-                          if (!Number.isFinite(parsed)) {
+                          const parsed = parseLocaleNumber(raw);
+                          if (parsed === null) {
                             return;
                           }
                           void setNumberHabitValue(habit.id, parsed);
+                        }}
+                        onBlur={() => {
+                          const raw = numberDrafts[habit.id];
+                          if (raw === undefined) {
+                            return;
+                          }
+
+                          if (!raw.trim()) {
+                            void setNumberHabitValue(habit.id, null);
+                            setNumberDrafts((prev) => {
+                              const next = { ...prev };
+                              delete next[habit.id];
+                              return next;
+                            });
+                            return;
+                          }
+
+                          const parsed = parseLocaleNumber(raw);
+                          if (parsed !== null) {
+                            void setNumberHabitValue(habit.id, parsed);
+                          }
+
+                          setNumberDrafts((prev) => {
+                            const next = { ...prev };
+                            delete next[habit.id];
+                            return next;
+                          });
                         }}
                         placeholder={habit.unit ? habit.unit : "Not tracked"}
                         aria-label={`${habit.label ?? habit.id} value`}
