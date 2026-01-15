@@ -1021,6 +1021,34 @@ export default function App() {
         <aside className="stack">
           <section className="card">
             <div className="section-head">
+              <h2>Daily note</h2>
+              <span className="pill accent">Optional</span>
+            </div>
+            <form className="form" onSubmit={handleSaveNote}>
+              <textarea
+                value={dayNote}
+                onChange={(event) => setDayNote(event.target.value)}
+                rows={4}
+                placeholder="What made today feel different?"
+                aria-label="Daily note"
+              />
+              <button
+                className="primary"
+                type="submit"
+                disabled={
+                  noteSaving ||
+                  dayLoading ||
+                  dayNote.trim() === savedDayNote.trim()
+                }
+              >
+                {noteSaving ? "Saving…" : "Save note"}
+              </button>
+            </form>
+            {noteError ? <p className="error">{noteError}</p> : null}
+          </section>
+
+          <section className="card">
+            <div className="section-head">
               <h2>Add habit</h2>
               <span className="pill accent">Quick create</span>
             </div>
@@ -1166,34 +1194,6 @@ export default function App() {
             <p className="meta">
               Habits live in `trackerDefs`. They are shared across all dates.
             </p>
-          </section>
-
-          <section className="card">
-            <div className="section-head">
-              <h2>Daily note</h2>
-              <span className="pill accent">Optional</span>
-            </div>
-            <form className="form" onSubmit={handleSaveNote}>
-              <textarea
-                value={dayNote}
-                onChange={(event) => setDayNote(event.target.value)}
-                rows={4}
-                placeholder="What made today feel different?"
-                aria-label="Daily note"
-              />
-              <button
-                className="primary"
-                type="submit"
-                disabled={
-                  noteSaving ||
-                  dayLoading ||
-                  dayNote.trim() === savedDayNote.trim()
-                }
-              >
-                {noteSaving ? "Saving…" : "Save note"}
-              </button>
-            </form>
-            {noteError ? <p className="error">{noteError}</p> : null}
           </section>
 
           <section className="card">
