@@ -12,8 +12,10 @@ import {
   doc,
   getDoc,
   onSnapshot,
+  query,
   serverTimestamp,
   setDoc,
+  where,
   type FieldValue,
 } from "firebase/firestore";
 import {
@@ -191,7 +193,6 @@ export default function App() {
   const [tokenStatus, setTokenStatus] = useState("");
   const [addHabitError, setAddHabitError] = useState("");
   const [editingHabitId, setEditingHabitId] = useState<string | null>(null);
-  const [showInactiveHabits, setShowInactiveHabits] = useState(false);
 
   const customCategoryRef = useRef<HTMLInputElement | null>(null);
   const enumOptionRef = useRef<HTMLInputElement | null>(null);
@@ -223,8 +224,6 @@ export default function App() {
     () => habits.filter((habit) => habit.active !== false),
     [habits]
   );
-
-  const habitsForList = showInactiveHabits ? habits : activeHabits;
 
   const dateKey = formatDateKey(selectedDate);
   const prettyDate = DATE_FORMATTER.format(selectedDate);
@@ -309,7 +308,7 @@ export default function App() {
 
     setHabitsLoading(true);
     const unsub = onSnapshot(
-      collection(db, "trackerDefs"),
+      query(collection(db, "trackerDefs"), where("active", "==", true)),
       (snapshot) => {
         const next = snapshot.docs.map((docSnap) => {
           const data = docSnap.data() as Omit<HabitDef, "id">;
@@ -914,28 +913,18 @@ export default function App() {
           <div className="section-head">
             <h2>Habits</h2>
             <div className="section-tools">
-              <label className="toggle-inline">
-                <input
-                  type="checkbox"
-                  checked={showInactiveHabits}
-                  onChange={(event) =>
-                    setShowInactiveHabits(event.target.checked)
-                  }
-                />
-                <span>Show inactive</span>
-              </label>
               <span className="pill">{dateKey}</span>
             </div>
           </div>
           {habitsLoading || dayLoading ? (
             <p className="meta">Loading your habits…</p>
-          ) : habitsForList.length === 0 ? (
+          ) : activeHabits.length === 0 ? (
             <p className="meta">
               No habits yet. Add documents in `trackerDefs` or create one below.
             </p>
           ) : (
             <ul className="habit-list">
-              {habitsForList.map((habit, index) => {
+              {activeHabits.map((habit, index) => {
                 const entry = dayEntries[habit.id];
                 const isEnum = habit.type === "enum";
                 const isMultiEnum = habit.type === "multiEnum";
