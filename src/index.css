@@ -345,6 +345,37 @@ button.ghost {
   gap: 4px;
 }
 
+.habit-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+button.mini {
+  padding: 6px 10px;
+  border-radius: 12px;
+  font-size: 0.85rem;
+}
+
+.section-tools {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.toggle-inline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.toggle-inline input {
+  width: 16px;
+  height: 16px;
+}
+
 .habit-name {
   font-weight: 600;
   font-size: 1rem;

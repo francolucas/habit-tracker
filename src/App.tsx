@@ -190,10 +190,13 @@ export default function App() {
   const [firestoreError, setFirestoreError] = useState("");
   const [tokenStatus, setTokenStatus] = useState("");
   const [addHabitError, setAddHabitError] = useState("");
+  const [editingHabitId, setEditingHabitId] = useState<string | null>(null);
+  const [showInactiveHabits, setShowInactiveHabits] = useState(false);
 
   const customCategoryRef = useRef<HTMLInputElement | null>(null);
   const enumOptionRef = useRef<HTMLInputElement | null>(null);
   const numberUnitRef = useRef<HTMLInputElement | null>(null);
+  const habitFormRef = useRef<HTMLElement | null>(null);
 
   const firebase = useMemo(
     () => (config ? initFirebase(config) : null),
@@ -215,6 +218,13 @@ export default function App() {
 
     return unique;
   }, [habits]);
+
+  const activeHabits = useMemo(
+    () => habits.filter((habit) => habit.active !== false),
+    [habits]
+  );
+
+  const habitsForList = showInactiveHabits ? habits : activeHabits;
 
   const dateKey = formatDateKey(selectedDate);
   const prettyDate = DATE_FORMATTER.format(selectedDate);
@@ -545,18 +555,52 @@ export default function App() {
     }
 
     setAddHabitError("");
-    const docId = toCamelCaseId(name);
-    if (!docId) {
-      setAddHabitError("Could not generate a valid habit ID.");
-      return;
-    }
-    const docRef = doc(db, "trackerDefs", docId);
-    const existing = await getDoc(docRef);
-    if (existing.exists()) {
-      setAddHabitError(`A habit with ID "${docId}" already exists.`);
-      return;
-    }
+
+    const resetHabitForm = () => {
+      setNewHabitName("");
+      setCategorySelection("");
+      setCustomCategory("");
+      setNewHabitType("boolean");
+      setNewHabitEnumOption("");
+      setNewHabitEnumOptions([]);
+      setNewHabitNumberUnit("");
+      setNewHabitActive(true);
+      setEditingHabitId(null);
+    };
+
     try {
+      if (editingHabitId) {
+        const docRef = doc(db, "trackerDefs", editingHabitId);
+        await setDoc(
+          docRef,
+          {
+            label: name,
+            active: newHabitActive,
+            category,
+            updatedAt: serverTimestamp(),
+            ...(newHabitType === "enum" || newHabitType === "multiEnum"
+              ? { enumOptions: newHabitEnumOptions }
+              : { enumOptions: deleteField() }),
+            ...(newHabitType === "number" ? { unit } : { unit: deleteField() }),
+          },
+          { merge: true }
+        );
+        resetHabitForm();
+        return;
+      }
+
+      const docId = toCamelCaseId(name);
+      if (!docId) {
+        setAddHabitError("Could not generate a valid habit ID.");
+        return;
+      }
+      const docRef = doc(db, "trackerDefs", docId);
+      const existing = await getDoc(docRef);
+      if (existing.exists()) {
+        setAddHabitError(`A habit with ID "${docId}" already exists.`);
+        return;
+      }
+
       const nextOrder =
         habits.reduce((max, habit) => Math.max(max, habit.order ?? 0), 0) + 10;
       await setDoc(docRef, {
@@ -572,17 +616,14 @@ export default function App() {
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       });
-      setNewHabitName("");
-      setCategorySelection("");
-      setCustomCategory("");
-      setNewHabitType("boolean");
-      setNewHabitEnumOption("");
-      setNewHabitEnumOptions([]);
-      setNewHabitNumberUnit("");
-      setNewHabitActive(true);
+      resetHabitForm();
     } catch (error) {
       setAddHabitError(
-        error instanceof Error ? error.message : "Failed to add habit."
+        error instanceof Error
+          ? error.message
+          : editingHabitId
+          ? "Failed to update habit."
+          : "Failed to add habit."
       );
     }
   };
@@ -606,6 +647,41 @@ export default function App() {
     setNewHabitEnumOptions((current) =>
       current.filter((item) => item !== value)
     );
+  };
+
+  const startEditingHabit = (habit: HabitDef) => {
+    setEditingHabitId(habit.id);
+    setAddHabitError("");
+    setNewHabitName(habit.label ?? habit.id);
+    setNewHabitActive(habit.active !== false);
+    setNewHabitType(habit.type ?? "boolean");
+    setNewHabitEnumOption("");
+    setNewHabitEnumOptions(habit.enumOptions ?? []);
+    setNewHabitNumberUnit(habit.unit ?? "");
+
+    const category = habit.category?.trim() ?? "";
+    setCategorySelection(category);
+    setCustomCategory("");
+
+    requestAnimationFrame(() => {
+      habitFormRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    });
+  };
+
+  const cancelEditingHabit = () => {
+    setEditingHabitId(null);
+    setAddHabitError("");
+    setNewHabitName("");
+    setCategorySelection("");
+    setCustomCategory("");
+    setNewHabitType("boolean");
+    setNewHabitEnumOption("");
+    setNewHabitEnumOptions([]);
+    setNewHabitNumberUnit("");
+    setNewHabitActive(true);
   };
 
   const handleSaveNote = async (event: FormEvent<HTMLFormElement>) => {
@@ -675,7 +751,7 @@ export default function App() {
     await signOut(auth);
   };
 
-  const completedCount = habits.reduce((total, habit) => {
+  const completedCount = activeHabits.reduce((total, habit) => {
     const entry = dayEntries[habit.id];
     if (habit.type === "enum") {
       return total + (typeof entry === "string" && entry.length > 0 ? 1 : 0);
@@ -694,8 +770,8 @@ export default function App() {
     return total + (entry === true ? 1 : 0);
   }, 0);
 
-  const completionRate = habits.length
-    ? Math.round((completedCount / habits.length) * 100)
+  const completionRate = activeHabits.length
+    ? Math.round((completedCount / activeHabits.length) * 100)
     : 0;
 
   if (!config) {
@@ -811,7 +887,7 @@ export default function App() {
           <div className="progress">
             <span className="progress-label">{completionRate}%</span>
             <span className="progress-sub">
-              {completedCount} of {habits.length} done
+              {completedCount} of {activeHabits.length} done
             </span>
           </div>
           <div className="controls">
@@ -837,17 +913,29 @@ export default function App() {
         <section className="card">
           <div className="section-head">
             <h2>Habits</h2>
-            <span className="pill">{dateKey}</span>
+            <div className="section-tools">
+              <label className="toggle-inline">
+                <input
+                  type="checkbox"
+                  checked={showInactiveHabits}
+                  onChange={(event) =>
+                    setShowInactiveHabits(event.target.checked)
+                  }
+                />
+                <span>Show inactive</span>
+              </label>
+              <span className="pill">{dateKey}</span>
+            </div>
           </div>
           {habitsLoading || dayLoading ? (
             <p className="meta">Loading your habits…</p>
-          ) : habits.length === 0 ? (
+          ) : habitsForList.length === 0 ? (
             <p className="meta">
               No habits yet. Add documents in `trackerDefs` or create one below.
             </p>
           ) : (
             <ul className="habit-list">
-              {habits.map((habit, index) => {
+              {habitsForList.map((habit, index) => {
                 const entry = dayEntries[habit.id];
                 const isEnum = habit.type === "enum";
                 const isMultiEnum = habit.type === "multiEnum";
@@ -948,7 +1036,10 @@ export default function App() {
                         }
                         onChange={(event) => {
                           const raw = event.target.value;
-                          setNumberDrafts((prev) => ({ ...prev, [habit.id]: raw }));
+                          setNumberDrafts((prev) => ({
+                            ...prev,
+                            [habit.id]: raw,
+                          }));
                           if (!raw) {
                             void setNumberHabitValue(habit.id, null);
                             return;
@@ -1007,10 +1098,20 @@ export default function App() {
                         {details ? ` · ${details}` : ""}
                       </p>
                     </div>
-                    <span
-                      className="habit-color"
-                      style={{ background: getHabitColor(habit) }}
-                    />
+                    <div className="habit-right">
+                      <button
+                        type="button"
+                        className="ghost mini"
+                        onClick={() => startEditingHabit(habit)}
+                        disabled={habitsLoading || dayLoading}
+                      >
+                        Edit
+                      </button>
+                      <span
+                        className="habit-color"
+                        style={{ background: getHabitColor(habit) }}
+                      />
+                    </div>
                   </li>
                 );
               })}
@@ -1047,10 +1148,14 @@ export default function App() {
             {noteError ? <p className="error">{noteError}</p> : null}
           </section>
 
-          <section className="card">
+          <section className="card" ref={habitFormRef}>
             <div className="section-head">
-              <h2>Add habit</h2>
-              <span className="pill accent">Quick create</span>
+              <h2>{editingHabitId ? "Edit habit" : "Add habit"}</h2>
+              {editingHabitId ? (
+                <span className="pill">{editingHabitId}</span>
+              ) : (
+                <span className="pill accent">Quick create</span>
+              )}
             </div>
             <form className="form" onSubmit={handleAddHabit}>
               <input
@@ -1104,6 +1209,7 @@ export default function App() {
                     }
                   }}
                   aria-label="Habit type"
+                  disabled={Boolean(editingHabitId)}
                 >
                   <option value="boolean">Boolean</option>
                   <option value="enum">Enum</option>
@@ -1174,21 +1280,33 @@ export default function App() {
                   onChange={(event) => setNewHabitActive(event.target.checked)}
                 />
               </label>
-              <button
-                className="primary"
-                type="submit"
-                disabled={
-                  !newHabitName.trim() ||
-                  !categorySelection ||
-                  (categorySelection === NEW_CATEGORY_VALUE &&
-                    !customCategory.trim()) ||
-                  ((newHabitType === "enum" || newHabitType === "multiEnum") &&
-                    newHabitEnumOptions.length === 0) ||
-                  (newHabitType === "number" && !newHabitNumberUnit.trim())
-                }
-              >
-                Add
-              </button>
+              <div className="actions">
+                <button
+                  className="primary"
+                  type="submit"
+                  disabled={
+                    !newHabitName.trim() ||
+                    !categorySelection ||
+                    (categorySelection === NEW_CATEGORY_VALUE &&
+                      !customCategory.trim()) ||
+                    ((newHabitType === "enum" ||
+                      newHabitType === "multiEnum") &&
+                      newHabitEnumOptions.length === 0) ||
+                    (newHabitType === "number" && !newHabitNumberUnit.trim())
+                  }
+                >
+                  {editingHabitId ? "Save changes" : "Add"}
+                </button>
+                {editingHabitId ? (
+                  <button
+                    className="ghost"
+                    type="button"
+                    onClick={cancelEditingHabit}
+                  >
+                    Cancel
+                  </button>
+                ) : null}
+              </div>
             </form>
             {addHabitError ? <p className="error">{addHabitError}</p> : null}
             <p className="meta">
