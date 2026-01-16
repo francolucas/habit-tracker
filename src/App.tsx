@@ -237,15 +237,10 @@ export default function App() {
     return unique;
   }, [habits]);
 
-  const activeHabits = useMemo(
-    () => habits.filter((habit) => habit.active !== false),
-    [habits]
-  );
-
   const habitGroups = useMemo(() => {
     const grouped = new Map<string, HabitDef[]>();
 
-    for (const habit of activeHabits) {
+    for (const habit of habits) {
       const category = habit.category?.trim() || "Uncategorized";
       const bucket = grouped.get(category);
       if (bucket) {
@@ -280,7 +275,7 @@ export default function App() {
     });
 
     return entries;
-  }, [activeHabits]);
+  }, [habits]);
 
   const dateKey = formatDateKey(selectedDate);
   const prettyDate = DATE_FORMATTER.format(selectedDate);
@@ -710,7 +705,7 @@ export default function App() {
     setEditingHabitId(habit.id);
     setAddHabitError("");
     setNewHabitName(habit.label ?? habit.id);
-    setNewHabitActive(habit.active !== false);
+    setNewHabitActive(habit.active ?? true);
     setNewHabitType(habit.type ?? "boolean");
     setNewHabitEnumOption("");
     setNewHabitEnumOptions(habit.enumOptions ?? []);
@@ -808,7 +803,7 @@ export default function App() {
     await signOut(auth);
   };
 
-  const completedCount = activeHabits.reduce((total, habit) => {
+  const completedCount = habits.reduce((total, habit) => {
     const entry = dayEntries[habit.id];
     if (habit.type === "enum") {
       return total + (typeof entry === "string" && entry.length > 0 ? 1 : 0);
@@ -827,8 +822,8 @@ export default function App() {
     return total + (entry === true ? 1 : 0);
   }, 0);
 
-  const completionRate = activeHabits.length
-    ? Math.round((completedCount / activeHabits.length) * 100)
+  const completionRate = habits.length
+    ? Math.round((completedCount / habits.length) * 100)
     : 0;
 
   if (!config) {
@@ -944,7 +939,7 @@ export default function App() {
           <div className="progress">
             <span className="progress-label">{completionRate}%</span>
             <span className="progress-sub">
-              {completedCount} of {activeHabits.length} done
+              {completedCount} of {habits.length} done
             </span>
           </div>
           <div className="controls">
@@ -977,7 +972,7 @@ export default function App() {
           </div>
           {habitsLoading || dayLoading ? (
             <p className="meta">Loading your habits…</p>
-          ) : activeHabits.length === 0 ? (
+          ) : habits.length === 0 ? (
             <p className="meta">
               No habits yet. Add documents in `trackerDefs` or create one below.
             </p>
@@ -999,33 +994,14 @@ export default function App() {
                         : isNumber
                         ? typeof entry === "number" && Number.isFinite(entry)
                         : entry === true;
-                      const inactive = habit.active === false;
                       const multiValues =
                         isMultiEnum && Array.isArray(entry) ? entry : [];
-                      const status = inactive
-                        ? "Inactive"
-                        : isEnum
-                        ? typeof entry === "string" && entry.length > 0
-                          ? entry
-                          : "Not tracked"
-                        : isMultiEnum
-                        ? multiValues.length
-                          ? multiValues.join(", ")
-                          : "Not tracked"
-                        : isNumber
-                        ? typeof entry === "number" && Number.isFinite(entry)
-                          ? `${entry}${habit.unit ? ` ${habit.unit}` : ""}`
-                          : "Not tracked"
-                        : done
-                        ? "Completed"
-                        : "Not yet";
+                      const status = done ? "" : "Not yet";
 
                       return (
                         <li
                           key={habit.id}
-                          className={`habit-item ${done ? "done" : ""} ${
-                            inactive ? "inactive" : ""
-                          }`}
+                          className={`habit-item ${done ? "done" : ""}`}
                           style={{ animationDelay: `${index * 45}ms` }}
                         >
                           {isEnum ? (
@@ -1039,7 +1015,6 @@ export default function App() {
                                 )
                               }
                               aria-label={`${habit.label ?? habit.id} value`}
-                              disabled={inactive}
                             >
                               <option value="">Not tracked</option>
                               {(habit.enumOptions ?? []).map((option) => (
@@ -1074,7 +1049,6 @@ export default function App() {
                                       aria-label={`${
                                         habit.label ?? habit.id
                                       } ${option}`}
-                                      disabled={inactive}
                                     />
                                     <span>{option}</span>
                                   </label>
@@ -1141,14 +1115,12 @@ export default function App() {
                                 habit.unit ? habit.unit : "Not tracked"
                               }
                               aria-label={`${habit.label ?? habit.id} value`}
-                              disabled={inactive}
                             />
                           ) : (
                             <button
                               className="toggle"
                               onClick={() => void toggleHabit(habit.id)}
                               aria-pressed={done}
-                              disabled={inactive}
                             >
                               <span className="toggle-dot" />
                             </button>
