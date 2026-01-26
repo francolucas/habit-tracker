@@ -457,7 +457,7 @@ textarea {
   border-radius: 14px;
   border: 1px solid var(--border);
   padding: 12px 14px;
-  font-size: 0.95rem;
+  font-size: 1rem;
   background: #fff;
 }
 
